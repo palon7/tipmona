@@ -162,7 +162,7 @@ client.on_timeline_status do |status|
 		$log.debug("Retweet. Ignore.")
 	when /giveme|give me/
 		$log.info("-> Giving...")
-		$banuser.each do |v|
+		BAN_USER.each do |v|
 			if username == v
 				$log.info("-> Banned user.")
 				postTwitter("@#{username} あなたのアカウントはfaucet機能を停止されています。ご不明な点があれば@palon7へご連絡ください。")
