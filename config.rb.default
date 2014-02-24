@@ -1,6 +1,6 @@
 ### Config ###
 
-BAN_USER = [""]
+BAN_USER = []
 
 ### Twitter API
 
