@@ -1,0 +1,8 @@
+# Linux
+.*
+!.gitignore
+*~
+
+# Other
+*.log
+config.rb

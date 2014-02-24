@@ -1,0 +1,33 @@
+### Config ###
+
+BAN_USER = [""]
+
+### Twitter API
+
+# Consumer key
+CONSUMER_KEY        = ""
+
+# Consumer secret
+CONSUMER_SECRET     = ""
+
+# Access token
+ACCESS_TOKEN        = ""
+
+# Access token secret
+ACCESS_TOKEN_SECRET = ""
+
+
+
+### monacoind
+
+# RPC Address
+COIND_ADDRESS  = "127.0.0.1"
+
+# RPC Port
+COIND_PORT     = "12579"
+
+# RPC Username
+COIND_USERNAME = ""
+
+# RPC Password
+COIND_PASSWORD = ""
