@@ -46,6 +46,7 @@ require 'oauth'
 require 'json'
 require 'pp'
 require 'mysql'
+require 'bigdecimal'
 
 require './config.rb'
 
@@ -294,6 +295,7 @@ end
 		amount = $3.to_f
 		tax = 0.005
 		total = amount + tax
+		total = total.truncate(10)
 		address = $7
 		balance = $monacoind.getbalance(account,6)
 		
