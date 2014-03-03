@@ -155,13 +155,17 @@ client.on_timeline_status do |status|
 	account = "tipmona-" + username.downcase
 	
 	next if username == "tipmona"
-
+	
 	# トランザクション処理
 	
     case message
 	when /RT.*@.*/
 		$log.debug("Retweet. Ignore.")
 	when /giveme|give me/
+        # 自動ツイート系対策（できてるか自信ない）
+	    if status.source =~ /(twittbot(\.net)?|EasyBotter|IFTTT|Twibow|MySweetBot|BotMaker|rakubo2|Stoome|twiroboJP|劣化コピー|ツイ助|makebot|ShootingStar)/
+		   	next
+        end
 		$log.info("-> Giving...")
 		BAN_USER.each do |v|
 			if username == v
@@ -295,7 +299,6 @@ end
 		amount = $3.to_f
 		tax = 0.005
 		total = amount + tax
-		total = total.truncate(10)
 		address = $7
 		balance = $monacoind.getbalance(account,6)
 		
@@ -361,9 +364,9 @@ end
 		from = username
         to = $3
         amount = $5.to_f
+		$log.info("-> Send #{amount}mona from @#{from} to @#{to}")
 		next if amount < 0
 
-		$log.info("-> Send #{amount}mona from @#{from} to @#{to}")
 
         # 残高チェック
 		if balance < amount
