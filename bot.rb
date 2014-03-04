@@ -388,6 +388,17 @@ end
 			end
 		next
         end
+		
+		# 送信先ユーザの存在をチェック
+		begin
+			# ユーザ情報を取得してみる
+			$twitter.user(to)
+		rescue Twitter::Error::NotFound # NotFoundなら
+			# エラーメッセージ送信
+			postTwitter("@#{username} 申し訳ありません！#{to}というユーザー名は存在しないようです。")
+			# 送金をスキップする
+			next
+		end
 
 		# moveで送る
 		to_account = "tipmona-" + to.downcase
