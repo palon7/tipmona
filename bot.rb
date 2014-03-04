@@ -360,11 +360,15 @@ end
 		end
 	when /(tip)( |　)+@([A-z0-9_]+)( |　)+(([1-9]\d*|0)(\.\d+)?)/
 		$log.info("Sending...")
-		balance = $monacoind.getbalance(account,6)
-		from = username
-        to = $3
-        amount = $5.to_f
+		# 情報取得
+		balance = $monacoind.getbalance(account,6)	# 残高
+		from = username   # 送信元
+        to = $3           # 送信先
+        amount = $5.to_f  # 金額
+
 		$log.info("-> Send #{amount}mona from @#{from} to @#{to}")
+
+		# 額が0より小さかったら無視する
 		next if amount < 0
 
 
