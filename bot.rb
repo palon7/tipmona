@@ -36,6 +36,8 @@ THE SOFTWARE.
 
 =end
 
+# そろそろきっちりクラスにしたい。
+
 require './bitcoin_rpc.rb'
 require './multi_io.rb'
 require 'rubygems'
@@ -108,9 +110,13 @@ def isjp(username)
 	end
 end
 
-def postTwitter(text)
+def postTwitter(text, statusid = false)
   begin
-    $twitter.update(text)
+    if statusid
+	    $twitter.update(text, :in_reply_to_status_id => statusid)
+	else
+	    $twitter.update(text)
+	end
   rescue Timeout::Error, StandardError => exc
     $log.error("Error while posting: #{exc}: [text]#{text}")
   else
@@ -154,6 +160,10 @@ client.on_timeline_status do |status|
 	username = status.user.screen_name
 	account = "tipmona-" + username.downcase
 	
+	pp status
+	# ステータスID
+	to_status_id = status.id
+	
 	next if username == "tipmona"
 	
 	# トランザクション処理
@@ -170,7 +180,7 @@ client.on_timeline_status do |status|
 		BAN_USER.each do |v|
 			if username == v
 				$log.info("-> Banned user.")
-				postTwitter("@#{username} あなたのアカウントはfaucet機能を停止されています。ご不明な点があれば@palon7へご連絡ください。")
+				postTwitter("@#{username} あなたのアカウントはfaucet機能を停止されています。ご不明な点があれば@palon7へご連絡ください。", to_status_id)
 			end
 		end
 		# Tweet count
@@ -179,9 +189,9 @@ client.on_timeline_status do |status|
 			if isjp(username)
 				postTwitter(dice([
 					"@#{username} ごめんなさい、まだあなたのアカウントのツイート数が少なすぎるようです#{getps()} Twitterをもっと使ってからもう一度お願いします！"
-				]))
+				]), to_status_id)
 			else
-				postTwitter("@#{username} Your account hasn't much tweet#{getps()}")
+				postTwitter("@#{username} Your account hasn't much tweet#{getps()}", to_status_id)
 			end
 			next
 		end
@@ -193,9 +203,9 @@ client.on_timeline_status do |status|
 			if isjp(username)
 				postTwitter(dice([
 					"@#{username} ごめんなさい、まだあなたはアカウントを作成してから二週間以上経ってないみたいです#{getps()}"
-				]))
+				]), to_status_id)
 			else
-				postTwitter("@#{username} Your account must be created at more than 2 weeks ago#{getps()}")
+				postTwitter("@#{username} Your account must be created at more than 2 weeks ago#{getps()}", to_status_id)
 			end
 			next
 		end		
@@ -213,9 +223,9 @@ client.on_timeline_status do |status|
 						"@#{username} ごめんなさい、配布用ポットにMONAが入ってないみたいです＞＜ @mona_faucetに送金してもらえると嬉しいですっ！",
 						"@#{username} ごめんなさい、配布用ポットの中身がもうありません＞＜ @mona_faucetに送金してもらえると嬉しいですっ！",
 						"@#{username} ごめんなさい、配布用ポットの中身がないみたいですっ＞＜ @mona_faucetに送金してもらえると嬉しいですっ！"
-					]))
+					]), to_status_id)
 				else
-					postTwitter("@#{username} Sorry, there is no more MONA in faucet (><) Please tip to @mona_faucet#{getps()}")
+					postTwitter("@#{username} Sorry, there is no more MONA in faucet (><) Please tip to @mona_faucet#{getps()}", to_status_id)
 				end
 				next
 			end
@@ -228,9 +238,9 @@ client.on_timeline_status do |status|
 					"@#{username} さんに#{amount}Monaをプレゼント！",
 					"@#{username} さんに#{amount}Monaをプレゼントしましたっ！",
 					"@#{username} さんに#{amount}Monaプレゼントしました！！"
-				]))
+				]), to_status_id)
 			else
-				postTwitter("Present for @#{username} -san! Sent #{amount}Mona!")
+				postTwitter("Present for @#{username} -san! Sent #{amount}Mona!", to_status_id)
 			end
 			$last_faucet[username] = Time.now
 		else
@@ -241,16 +251,16 @@ client.on_timeline_status do |status|
 					"@#{username} まだ最後の配布から24時間経ってないようです・・・・ごめんなさい！",
 					"@#{username} まだ最後の配布から24時間経ってないみたいです・・・ごめんなさい！",
 					"@#{username} まだ最後の配布から24時間経ってないみたいです・・・・ごめんなさい！"
-				]))
+				]), to_status_id)
 			else
-				postTwitter("@#{username} You have already received MONA in the last 24 hours#{getps()}")
+				postTwitter("@#{username} You have already received MONA in the last 24 hours#{getps()}", to_status_id)
 			end
 		end
 	when /(Follow|follow|フォロー|ふぉろー)して/
 		$log.info("Following #{username}...")
 		pp $twitter.follow(username)
 		$log.info("-> Followed.")
-		postTwitter("@#{username} をフォローしました！")
+		postTwitter("@#{username} をフォローしました！", to_status_id)
 	when /balance/
 		$log.info("Check balance of #{username}...")
 		balance = $monacoind.getbalance(account,6)
@@ -268,12 +278,12 @@ begin
 				"@#{username} さんの残高は #{balance} Monaですよっ！ (confirm中残高との合計: #{all_balance} Mona)"
 			])
 			$log.debug("Send: @#{status}")
-			postTwitter(status)
+			postTwitter(status,to_status_id)
 rescue
  		   $log.error("#{exc}: [text]#{text}")
 end   
 		else
-			postTwitter("@#{username} 's balance is #{balance} Mona#{getps()} (Total with confirming balance: #{all_balance} Mona)")
+			postTwitter("@#{username} 's balance is #{balance} Mona#{getps()} (Total with confirming balance: #{all_balance} Mona)", to_status_id)
 		end
 	when /deposit/
 		$log.info("Get deposit address of #{username}...")
@@ -285,9 +295,9 @@ end
 				"@#{username} #{address} にMonacoinを送ってください！",
 				"@#{username} #{address} にMonacoinを送金してくださいっ！",
 				"@#{username} #{address} にMonacoinを送ってくださいっ！"
-			]))
+			]), to_status_id)
 		else
-			postTwitter("@#{username} Please send MONA to #{address}")
+			postTwitter("@#{username} Please send MONA to #{address}", to_status_id)
 		end
 	when /message( |　)(.*)/
 		if username == "palon7"
@@ -312,9 +322,9 @@ end
 	        		"@#{username} ごめんなさい、残高が足りないようです#{getps()} 引き出しには0.005Monaの手数料がかかることにも注意してください！ (現在#{balance}Mona)",
 	        		"@#{username} ごめんなさい、残高が足りません＞＜ 引き出しには0.005Monaの手数料がかかることにも注意してください！ (現在#{balance}Mona)",
 	        		"@#{username} ごめんなさい、残高が足りないみたいです#{getps()} 引き出しには0.005Monaの手数料がかかることにも注意してください！ (現在#{balance}Mona)"
-				]))
+				]),to_status_id)
 			else
-	        	postTwitter("@#{username} Not enough balance. Please note that required 0.005Mona fee when withdraw#{getps()}(Balance:#{balance}Mona)")
+	        	postTwitter("@#{username} Not enough balance. Please note that required 0.005Mona fee when withdraw#{getps()}(Balance:#{balance}Mona)", to_status_id)
 			end
 			next
 		end
@@ -324,9 +334,9 @@ end
 		if !validate['isvalid']
 			$log.info("-> Invalid address")
 			if isjp(username)
-				postTwitter("@#{username} ごめんなさい、アドレスが間違っているみたいです#{getps()}")
+				postTwitter("@#{username} ごめんなさい、アドレスが間違っているみたいです#{getps()}", to_status_id)
 			else
-				postTwitter("@#{username} Invalid address#{getps()}")
+				postTwitter("@#{username} Invalid address#{getps()}",to_status_id)
 			end
 			puts "Invalid address."
 		end
@@ -354,9 +364,9 @@ end
 				"@#{username} Monacoinを引き出しました！http://abe.monash.pw/tx/#{txid}",
 				"@#{username} さんのMonacoinを引き出しました！http://abe.monash.pw/tx/#{txid}",
 				"@#{username} Monacoinを引き出しましたっ！http://abe.monash.pw/tx/#{txid}"
-			]))
+			]),to_status_id)
 		else
-			postTwitter("@#{username} Withdraw complete. http://abe.monash.pw/tx/#{txid}")
+			postTwitter("@#{username} Withdraw complete. http://abe.monash.pw/tx/#{txid}", to_status_id)
 		end
 	when /(tip)( |　)+@([A-z0-9_]+)( |　)+(([1-9]\d*|0)(\.\d+)?)/
 		$log.info("Sending...")
@@ -382,9 +392,9 @@ end
 					"@#{username} ごめんなさい、残高が足りないようです＞＜ 6confirmされるまで残高が追加されないことにも注意してください！(現在の残高:#{balance}Mona)",
 					"@#{username} ごめんなさい、残高が足りないようですっ＞＜ 6confirmされるまで残高が追加されないことにも注意してください！(現在の残高:#{balance}Mona)",
 					"@#{username} ごめんなさい、残高が足りないようです・・ 6confirmされるまで残高が追加されないことにも注意してください！(現在の残高:#{balance}Mona)"
-				]))
+				]), to_status_id)
 			else
-	        	postTwitter("@#{username} Not enough balance. Please note that your balance apply when after 6 confirmed.#{getps()}(Balance:#{balance}Mona)")
+	        	postTwitter("@#{username} Not enough balance. Please note that your balance apply when after 6 confirmed.#{getps()}(Balance:#{balance}Mona)", to_status_id)
 			end
 		next
         end
@@ -395,7 +405,7 @@ end
 			$twitter.user(to)
 		rescue Twitter::Error::NotFound # NotFoundなら
 			# エラーメッセージ送信
-			postTwitter("@#{username} 申し訳ありません！#{to}というユーザー名は存在しないようです。")
+			postTwitter("@#{username} 申し訳ありません！#{to}というユーザー名は存在しないようです。", to_status_id)
 			# 送金をスキップする
 			next
 		end
@@ -417,7 +427,7 @@ end
 						"@#{from} すごい・・・本当にありがとうございます！ #{amount}monaを寄付用ポットにお預かりしました！",
 						"@#{from} すごい・・・本当にありがとうございますっ！ #{amount}monaを寄付用ポットにお預かりしました！",
 						"@#{from} わぁ・・・ありがとうございます！大好きです！ #{amount}monaを寄付用ポットにお預かりしました！"
-					]))
+					]), to_status_id)
 				else
 					postTwitter(dice([
 						"@#{from} ありがとうございます！ #{amount}monaを寄付用ポットにお預かりしました！",
@@ -428,7 +438,7 @@ end
 						"@#{from} わー、ありがとうございます！ #{amount}monaを寄付用ポットにお預かりしましたっ！",
 						"@#{from} ありがとうございます！ #{amount}monaを寄付用ポットにお預かりしましたっ！",
 						"@#{from} わー、ありがとうございます！ #{amount}monaを寄付用ポットにお預かりしましたっ！"
-					]))
+					]), to_status_id)
 				end
 			else
 				postTwitter(dice([
@@ -439,20 +449,20 @@ end
 					"@#{from} さんの#{amount}monaを @#{to} さんにどんどこわっしょーいっ",
 					"@#{from} さんの#{amount}monaを @#{to} さんにどんどこわっしょーい！",
 					"@#{from} さんの#{amount}monaを @#{to} さんにどんどこわっしょーいっ！"
-				]))
+				]), to_status_id)
 			end
 		else
 			postTwitter(dice([
 				"@#{from} -san to @#{to} -san! sent #{amount}mona.",
 				"From @#{from} -san to @#{to} -san! sent #{amount}mona.",
 				"@#{from} -san's #{amount}mona sent to @#{to} -san!"
-			]))
+			]),to_status_id)
 		end
-	when /(結婚|けっこん)し(て|よう)/
+	when /((結婚|けっこん)し(て|よう))|marry ?me/
 		postTwitter(dice([
 			"@#{username} ごめんなさい！",
 			"@#{username} ごめんなさい・・・"
-		]))
+		]), to_status_id)
     puts 
 	end
   end
