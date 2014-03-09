@@ -6,3 +6,4 @@
 # Other
 *.log
 config.rb
+*.old
