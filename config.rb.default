@@ -2,6 +2,8 @@
 
 BAN_USER = []
 
+MY_SCREEN_NAME = ""
+
 ### Twitter API
 
 # Consumer key
