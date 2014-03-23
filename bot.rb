@@ -38,6 +38,7 @@ THE SOFTWARE.
 
 # そろそろきっちりクラスにしたい。
 
+
 require './bitcoin_rpc.rb'
 require './multi_io.rb'
 require 'rubygems'
@@ -46,11 +47,20 @@ require 'twitter'
 require 'oauth'
 require 'json'
 require 'pp'
-require 'mysql2'
+require 'sqlite3'
+require 'active_record'
 require 'bigdecimal'
 require 'logger'
+require 'yaml'
 
 require './config.rb'
+
+# DB接続
+ActiveRecord::Base.configurations = YAML.load_file('database.yml')
+ActiveRecord::Base.establish_connection("production")
+
+class User < ActiveRecord::Base
+end
 
 $twitter = Twitter::REST::Client.new do |config|
   config.consumer_key        = CONSUMER_KEY
@@ -60,7 +70,6 @@ $twitter = Twitter::REST::Client.new do |config|
 end
 
 log_file = File.open("bot.log", "a")
-log_file.sync = true
 
 $log = Logger.new(MultiIO.new(STDOUT, log_file), 5)
 
@@ -129,6 +138,23 @@ def getps()
     return "。" * $random.rand(5)
 end
 
+def get_user(screen_name)
+    user = User.where(:screen_name => screen_name).first
+    if !user.blank?
+        return user
+    else
+        $log.debug("Not found in DB, create...")
+        user = User.create(
+            :screen_name => screen_name,
+            :donated => 0,
+            :affection => 50,
+            :give_at => 0
+        )
+        return user
+    end
+end
+
+
 =begin
 # 稼働時の処理（ここではサーバ接続したことを表示）
 client.on_inited do
@@ -161,13 +187,23 @@ def on_tweet(status)
     $log.info("Message: #{message}")
 
 	username = status.user.screen_name
-	account = "tipmona-" + username.downcase
-	
+    idstr = status.user.id.to_s
+    account = "tipmona-" + idstr
+    old_account = "tipmona-" + username.downcase
+    
+    # 古いデータが残っていれば自動で移動
+    old_balance = $monacoind.getbalance(old_account,6)
+    if old_balance > 0
+        $log.info("Old balance is active. moving...")
+        $monacoind.move(old_account, account, old_balance)
+    end
+
 	pp status
 	# ステータスID
 	to_status_id = status.id
 	
 	return if username == "tipmona"
+    userdata = get_user(username)
 	
 	# トランザクション処理
 	
@@ -213,11 +249,11 @@ def on_tweet(status)
 			return
 		end		
 		
-        amount = (10 + $random.rand(65).to_f) / 100
+        amount = (10 + $random.rand(30).to_f) / 100
 		$log.debug("Amount: #{amount}")
 		
 		if $last_faucet[username] == nil || $last_faucet[username] + (24 * 60 * 60) < Time.now
-			fb = $monacoind.getbalance("tipmona-mona_faucet")
+			fb = $monacoind.getbalance("tipmona-2350081615")
 			if fb < 1
 				$log.info("-> Not enough faucet pot!")
 				if isjp(username)
@@ -233,7 +269,7 @@ def on_tweet(status)
 				return
 			end
 			
-			$monacoind.move("tipmona-mona_faucet", account, amount)
+			$monacoind.move("tipmona-2350081615", account, amount)
 			$log.info("-> Done.")
 			if isjp(username)
 				postTwitter(dice([
@@ -405,7 +441,7 @@ end
 		# 送信先ユーザの存在をチェック
 		begin
 			# ユーザ情報を取得してみる
-			$twitter.user(to)
+			to_userdata = $twitter.user(to)
 		rescue Twitter::Error::NotFound # NotFoundなら
 			# エラーメッセージ送信
 			postTwitter("@#{username} 申し訳ありません！#{to}というユーザー名は存在しないようです。", to_status_id)
@@ -414,11 +450,23 @@ end
 		end
 
 		# moveで送る
-		to_account = "tipmona-" + to.downcase
+        to_account = "tipmona-" + to_userdata.id.to_s
 		$monacoind.move(account,to_account,amount)
 		$log.info("-> Sent.")
-		if isjp(to)
-			if to_account == "tipmona-mona_faucet"
+
+            if to_account == "tipmona-28724542"
+                userdata.affection = userdata.affection + (amount * 1).round
+                postTwitter(dice([
+                    "@#{from} 開発者への寄付ですね！ありがとうございます。",
+                    "@#{from} 開発者への寄付、ありがとうございます。",
+                    "@#{from} 開発へのご支援ありがとうございます！",
+                    "@#{from} 開発のご支援ありがとうございます！"
+                ]), to_status_id)
+                userdata.save
+            elsif to_account == "tipmona-2350081615"
+                userdata.donated = userdata.donated + amount
+                userdata.affection = userdata.affection + (amount * 0.5).round
+                userdata.save
 				if amount > 5
 					postTwitter(dice([
 						"@#{from} わぁ・・・こんなにたくさんありがとうございます！ #{amount}monaを寄付用ポットにお預かりしました！",
@@ -443,7 +491,8 @@ end
 						"@#{from} わー、ありがとうございます！ #{amount}monaを寄付用ポットにお預かりしましたっ！"
 					]), to_status_id)
 				end
-			else
+            end
+		if isjp(to)
 				postTwitter(dice([
 					"@#{from} さんから @#{to} さんにお届け物ですっ！ つ[#{amount}mona]",
 					"@#{from} さんから @#{to} さんにお届け物ですよっ！ つ[#{amount}mona]",
@@ -453,7 +502,6 @@ end
 					"@#{from} さんの#{amount}monaを @#{to} さんにどんどこわっしょーい！",
 					"@#{from} さんの#{amount}monaを @#{to} さんにどんどこわっしょーいっ！"
 				]), to_status_id)
-			end
 		else
 			postTwitter(dice([
 				"@#{from} -san to @#{to} -san! sent #{amount}mona.",
@@ -461,14 +509,35 @@ end
 				"@#{from} -san's #{amount}mona sent to @#{to} -san!"
 			]),to_status_id)
 		end
-	when /((結婚|けっこん)し(て|よう))|marry ?me/
-		postTwitter(dice([
-			"@#{username} ごめんなさい！",
-			"@#{username} ごめんなさい・・・"
-		]), to_status_id)
-    puts 
-	end
-  end
+    # ネタ系統
+	when /((結婚|けっこん|ケッコン))|marry ?me/
+        if userdata.affection >= 500
+            postTwitter(dice([
+                "@#{username} は、はい！",
+                "@#{username} 喜んで！"
+            ]), to_status_id)
+        elsif userdata.affection >= 300
+            postTwitter(dice([
+                "@#{username} そ、そんなこと言われても…///",
+                "@#{username} 考えさせてください。",
+                "@#{username} 少し考えさせてください。",
+                "@#{username} 考えさせてください…"
+            ]), to_status_id)
+        elsif userdata.affection >= 100
+            postTwitter(dice([
+                "@#{username} お気持ちは嬉しいですが、ごめんなさい…",
+                "@#{username} 嬉しいけど、ごめんなさい。"
+            ]), to_status_id)
+        else
+    		postTwitter(dice([
+    			"@#{username} ごめんなさい！",
+    			"@#{username} ごめんなさい・・・"
+    		]), to_status_id)
+        end
+    when /info/
+        postTwitter("@#{username} 寄付総額: #{userdata.donated} 好感度:#{userdata.affection}")
+    end
+end
 end
 
 def checkfollow()

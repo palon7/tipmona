@@ -46,11 +46,21 @@ require 'twitter'
 require 'oauth'
 require 'json'
 require 'pp'
-require 'mysql2'
+require 'sqlite3'
+require 'active_record'
 require 'bigdecimal'
 require 'logger'
+require 'yaml'
 
-require './config.rb'
+require './beta-config.rb'
+
+
+# DB接続
+ActiveRecord::Base.configurations = YAML.load_file('database.yml')
+ActiveRecord::Base.establish_connection("production")
+
+class User < ActiveRecord::Base
+end
 
 $twitter = Twitter::REST::Client.new do |config|
   config.consumer_key        = CONSUMER_KEY
@@ -61,6 +71,7 @@ end
 
 log_file = File.open("bot.log", "a")
 log_file.sync = true
+
 
 $log = Logger.new(MultiIO.new(STDOUT, log_file), 5)
 
@@ -117,7 +128,7 @@ def postTwitter(text, statusid = false)
 	    $twitter.update(text, :in_reply_to_status_id => statusid)
 	else
 	    $twitter.update(text)
-	end
+    end
   rescue Timeout::Error, StandardError => exc
     $log.error("Error while posting: #{exc}: [text]#{text}")
   else
@@ -127,6 +138,22 @@ end
 
 def getps()
     return "。" * $random.rand(5)
+end
+
+def get_user(screen_name)
+    user = User.where(:screen_name => screen_name).first
+    if !user.blank?
+        return user
+    else
+        $log.debug("Not found in DB, create...")
+        user = User.create(
+            :screen_name => screen_name,
+            :donated => 0,
+            :affection => 50,
+            :give_at => 0
+        )
+        return user
+    end
 end
 
 =begin
@@ -149,15 +176,15 @@ end
 
 #ツイートなどを含むメッセージを受けたときの処理
 def on_tweet(status)
-  if !status.text.index("RT") && !status.text.index("QT") && status.user.screen_name != "tipmona"
+  if !status.text.index("RT") && !status.text.index("QT") && status.user.screen_name != MY_SCREEN_NAME
  	#   checkfollow()
     $log.info("Tweet from #{status.user.screen_name}: #{status.text}")
 
-	if !status.text.index("@tipmona")
+	if !status.text.index(MY_SCREEN_NAME)
 		return
 	end
 
-    message = status.text.gsub(/@tipmona ?/, "")
+    message = status.text.gsub(/@#{MY_SCREEN_NAME} ?/, "")
     $log.info("Message: #{message}")
 
 	username = status.user.screen_name
@@ -167,8 +194,11 @@ def on_tweet(status)
 	# ステータスID
 	to_status_id = status.id
 	
-	return if username == "tipmona"
+	return if username == MY_SCREEN_NAME
 	
+    userdata = get_user(username)
+    pp userdata
+
 	# トランザクション処理
 	
     case message
@@ -176,7 +206,7 @@ def on_tweet(status)
 		$log.debug("Retweet. Ignore.")
 	when /giveme|give me/
         # 自動ツイート系対策（できてるか自信ない）
-	    if status.source =~ /(twittbot(\.net)?|EasyBotter|IFTTT|Twibow|MySweetBot|BotMaker|rakubo2|Stoome|twiroboJP|劣化コピー|ツイ助|makebot)/
+        if status.source =~ /(twittbot(\.net)?|EasyBotter|IFTTT|Twibow|MySweetBot|BotMaker|rakubo2|Stoome|twiroboJP|劣化コピー|ツイ助|makebot)/
 		   	return
         end
 		$log.info("-> Giving...")
@@ -371,7 +401,9 @@ end
 		else
 			postTwitter("@#{username} Withdraw complete. http://abe.monash.pw/tx/#{txid}", to_status_id)
 		end
-	when /(tip)( |　)+@([A-z0-9_]+)( |　)+(([1-9]\d*|0)(\.\d+)?)/
+    when /debuginfo/
+        postTwitter("@#{username} Donated: #{userdata.donated} Affection:#{userdata.affection}")
+    when /(tip)( |　)+@([A-z0-9_]+)( |　)+(([1-9]\d*|0)(\.\d+)?)/
 		$log.info("Sending...")
 		# 情報取得
 		balance = $monacoind.getbalance(account,6)	# 残高
@@ -399,7 +431,7 @@ end
 			else
 	        	postTwitter("@#{username} Not enough balance. Please note that your balance apply when after 6 confirmed.#{getps()}(Balance:#{balance}Mona)", to_status_id)
 			end
-		return
+	    	return
         end
 		
 		# 送信先ユーザの存在をチェック
@@ -418,7 +450,14 @@ end
 		$monacoind.move(account,to_account,amount)
 		$log.info("-> Sent.")
 		if isjp(to)
-			if to_account == "tipmona-mona_faucet"
+			if to_account == "tipmona-mona_faucet" || to_account == "tipmona"
+                if to_account == "tipmona"
+                    userdata.affection = userdata.affection + (ammount * 1).ceil
+                else
+                    userdata.donated = userdata.donated + amount
+                    userdata.affection = userdata.affection + (ammount * 0.5).ceil
+                end
+                userdata.save
 				if amount > 5
 					postTwitter(dice([
 						"@#{from} わぁ・・・こんなにたくさんありがとうございます！ #{amount}monaを寄付用ポットにお預かりしました！",
@@ -462,11 +501,17 @@ end
 			]),to_status_id)
 		end
 	when /((結婚|けっこん)し(て|よう))|marry ?me/
-		postTwitter(dice([
-			"@#{username} ごめんなさい！",
-			"@#{username} ごめんなさい・・・"
-		]), to_status_id)
-    puts 
+        if userdata.affection >= 55
+            postTwitter(dice([
+                "@#{username} お気持ちは嬉しいですが、ごめんなさい…",
+                "@#{username} 嬉しいけど、ごめんなさい。"
+            ]), to_status_id)
+        else
+    		postTwitter(dice([
+    			"@#{username} ごめんなさい！",
+    			"@#{username} ごめんなさい・・・"
+    		]), to_status_id)
+        end
 	end
   end
 end
@@ -514,7 +559,7 @@ client.user do |object|
     when Twitter::Tweet
         on_tweet(object)
     end
-end
+ end
 =begin
 begin
 client.userstream do |object|
