@@ -53,12 +53,13 @@ require 'bigdecimal'
 require 'logger'
 require 'yaml'
 require 'digest/md5'
+require 'date'
 
-require './config.rb'
+require './beta-config.rb'
 
 # DB接続
 ActiveRecord::Base.configurations = YAML.load_file('database.yml')
-ActiveRecord::Base.establish_connection("production")
+ActiveRecord::Base.establish_connection("beta")
 
 class User < ActiveRecord::Base
 end
@@ -127,7 +128,7 @@ def postTwitter(text, statusid = false)
 	    $twitter.update(text, :in_reply_to_status_id => statusid)
 	else
 	    $twitter.update(text)
-	end
+    end
   rescue Timeout::Error, StandardError => exc
     $log.error("Error while posting: #{exc}: [text]#{text}")
   else
@@ -155,6 +156,12 @@ def get_user(screen_name)
     end
 end
 
+def get_user_from_register_code(register_code)
+    user = User.where(:register_code => register_code).first
+    if !user.blank?
+        return user
+    end
+end
 
 =begin
 # 稼働時の処理（ここではサーバ接続したことを表示）
@@ -176,15 +183,15 @@ end
 
 #ツイートなどを含むメッセージを受けたときの処理
 def on_tweet(status)
-  if !status.text.index("RT") && !status.text.index("QT") && status.user.screen_name != "tipmona"
+  if !status.text.index("RT") && !status.text.index("QT") && status.user.screen_name != MY_SCREEN_NAME
  	#   checkfollow()
     $log.info("Tweet from #{status.user.screen_name}: #{status.text}")
 
-	if !status.text.index("@tipmona")
+	if !status.text.index("@#{MY_SCREEN_NAME}")
 		return
 	end
 
-    message = status.text.gsub(/@tipmona ?/, "")
+    message = status.text.gsub(/@#{MY_SCREEN_NAME} ?/, "")
     $log.info("Message: #{message}")
 
 	username = status.user.screen_name
@@ -203,7 +210,7 @@ def on_tweet(status)
 	# ステータスID
 	to_status_id = status.id
 	
-	return if username == "tipmona"
+	return if username == MY_SCREEN_NAME
     userdata = get_user(username)
 	
 	# トランザクション処理
@@ -211,12 +218,27 @@ def on_tweet(status)
     case message
 	when /RT.*@.*/
 		$log.debug("Retweet. Ignore.")
+    when /new [0-9a-f]{10}/
+        time = DateTime.parse(userdata.created_at)
+        time = time.to_i + 180 # 期限を3分
+        now = Time.now.to_i
+        $log.info(Time.at(time).to_s + " / " + Time.at(now).to_s)
+        # 新規ユーザー？
+        if time  > now
+            $log.info("New User!")
+        else
+            $log.info("Not new user! lol")
+            return
+        end
+        
+        inviter = get_user_from_register_code($1)
+        postTwitter("@#{username} @#{inviter.screen_name}さんからの招待ですね！")
 	when /giveme|give me/
         # 自動ツイート系対策（できてるか自信ない）
-	    if status.source =~ /(twittbot(\.net)?|EasyBotter|IFTTT|Twibow|MySweetBot|BotMaker|rakubo2|Stoome|twiroboJP|劣化コピー|ツイ助|makebot)/
+        if status.source =~ /(twittbot(\.net)?|EasyBotter|IFTTT|Twibow|MySweetBot|BotMaker|rakubo2|Stoome|twiroboJP|劣化コピー|ツイ助|makebot)/
 		   	return
         end
-		$log.info("-> Giving...")
+        $log.info("-> Giving...")
 		BAN_USER.each do |v|
 			if username == v
 				$log.info("-> Banned user.")
