@@ -8,4 +8,4 @@ Authors
 -------
 
 * [Palon](http://github.com/palon7) -
-  <http://rig.xii.jp/>
+  <http://palon.org/>
